@@ -22,10 +22,10 @@
   // ふりがな記法を取りのぞいた文字列（<title>用）
   function plain(text) { return String(text).replace(/\{([^{}|\n]+)\|([^{}|\n]+)\}/g, "$1"); }
 
-  function stars(level) {
+  function levelHtml(level) {
     const n = Math.max(1, Math.min(3, level | 0));
-    return '<span class="stars" title="' + esc(SITE.levels[n].name) + '">' +
-      "★".repeat(n) + '<span class="off">' + "★".repeat(3 - n) + "</span></span>";
+    return '<span class="lv lv' + n + '"><span class="stars">' + "★".repeat(n) +
+      '<span class="off">' + "★".repeat(3 - n) + "</span></span>" + esc(SITE.levels[n].name) + "</span>";
   }
 
   function visibleArticles() {
@@ -49,23 +49,30 @@
     return "article.html?id=" + encodeURIComponent(a.id) + (SHOW_DRAFT ? "&draft" : "");
   }
 
+  // サムネイル：画像（img/thumb/記事ID.webp）の上に、tag と catch の文字を重ねる
   function thumbHtml(a, opts) {
     opts = opts || {};
-    const cat = SITE.categories[a.category] || { color: "#888" };
-    const fmt = SITE.formats[a.format] || { name: a.format };
-    const glyph = a.thumb || "？";
-    return '<div class="thumb cat-' + esc(a.category) + '">' +
-      '<span class="glyph' + ([...glyph].length > 2 ? " long" : "") + '">' + esc(glyph) + "</span>" +
-      (opts.noBadge ? "" : '<span class="fmt">' + esc(fmt.name) + "</span>") +
+    const lines = Array.isArray(a.catch) ? a.catch : (a.catch ? [a.catch] : []);
+    const longest = Math.max(1, ...lines.map(l => [...l].length));
+    const size = Math.min(11.5, 60 / longest).toFixed(2);
+    const img = a.image === false ? "" :
+      '<img src="' + esc(a.image || "img/thumb/" + a.id + ".webp") + '" alt="" loading="' + (opts.eager ? "eager" : "lazy") + '" onerror="this.remove()">';
+    return '<div class="thumb cat-' + esc(a.category) + '">' + img +
+      '<div class="catch">' +
+      (a.tag ? '<span class="pill">' + esc(a.tag) + "</span>" : "") +
+      (lines.length ? '<span class="big" style="font-size:' + size + 'cqw">' + lines.map(esc).join("<br>") + "</span>" : "") +
+      "</div>" +
       (!opts.noBadge && isNew(a) ? '<span class="new">NEW</span>' : "") +
       "</div>";
   }
 
   function metaHtml(a) {
     const cat = SITE.categories[a.category] || { name: a.category };
+    const fmt = SITE.formats[a.format] || { name: a.format };
     return '<div class="meta">' +
+      '<span class="fmt-tag">' + esc(fmt.name) + "</span>" +
       '<span class="cat-tag cat-' + esc(a.category) + '">' + esc(cat.name) + "</span>" +
-      stars(a.level) +
+      levelHtml(a.level) +
       "<span>" + fmtDate(a.date) + "</span>" +
       (a.series ? '<span class="series-tag">連載「' + ruby(a.series) + "」#" + esc(a.seriesNo) + "</span>" : "") +
       "</div>";
@@ -83,14 +90,28 @@
     location.href = articleUrl(a);
   }
 
-  // ---- ふりがなON/OFF（この端末にだけ覚えておく） ----
-  function getFurigana() {
-    try { return localStorage.getItem("nr-furigana") !== "off"; } catch (e) { return true; }
+  // 研究所のメンバー（名前から探す。「ナル（研究員）」のような書き方でも見つかる）
+  function charOf(name) {
+    const key = plain(name).replace(/[（(].*$/, "").trim();
+    const c = (SITE.characters || {})[key];
+    return c ? Object.assign({ name: key }, c) : null;
+  }
+  function charIcon(name, cls) {
+    const c = charOf(name);
+    return c ? '<img class="' + (cls || "avatar") + '" src="' + esc(c.icon) + '" alt="' + esc(c.name) + '">' : "";
+  }
+
+  // ---- この端末にだけ覚えておく設定（ふりがな・ことばメモの翻訳） ----
+  function getPref(key, def) {
+    try { const v = localStorage.getItem(key); return v == null ? def : v; } catch (e) { return def; }
+  }
+  function setPref(key, val) {
+    try { localStorage.setItem(key, val); } catch (e) { /* 保存できなくても動く */ }
   }
   function setFurigana(on) {
     document.body.classList.toggle("no-furigana", !on);
     document.querySelectorAll(".furigana-toggle").forEach(b => b.setAttribute("aria-pressed", String(on)));
-    try { localStorage.setItem("nr-furigana", on ? "on" : "off"); } catch (e) { /* 保存できなくても動く */ }
+    setPref("nr-furigana", on ? "on" : "off");
   }
 
   const LOGO_SVG =
@@ -118,7 +139,9 @@
     const el = document.getElementById("site-footer");
     if (!el) return;
     el.className = "site-footer";
-    el.innerHTML = "<b>なるほどニッポン研究所</b><br>" +
+    el.innerHTML = '<div class="footer-chars">' +
+      Object.keys(SITE.characters || {}).map(n => charIcon(n, "avatar")).join("") + "</div>" +
+      "<b>なるほどニッポン研究所</b><br>" +
       "日本で学ぶ留学生のための「なるほど！」を集めた読みものサイトです。<br>" +
       "このサイトは学習の記録やアクセスした人の情報を保存しません。";
   }
@@ -126,11 +149,11 @@
   document.addEventListener("DOMContentLoaded", function () {
     renderHeader();
     renderFooter();
-    setFurigana(getFurigana());
+    setFurigana(getPref("nr-furigana", "on") !== "off");
   });
 
   window.NR = {
-    SITE, SHOW_DRAFT, esc, ruby, rubyHtml, plain, stars, visibleArticles, isNew, fmtDate,
-    articleUrl, thumbHtml, metaHtml, cardHtml, gacha
+    SITE, SHOW_DRAFT, esc, ruby, rubyHtml, plain, levelHtml, visibleArticles, isNew, fmtDate,
+    articleUrl, thumbHtml, metaHtml, cardHtml, gacha, charOf, charIcon, getPref, setPref
   };
 })();

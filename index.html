@@ -5,9 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>なるほどニッポン研究所</title>
 <meta name="description" content="日本で学ぶ留学生のための、クイズと読みもののサイト。日本語・日本のくらし・ざつがくの「なるほど！」を、やさしい日本語で。">
+<meta property="og:title" content="なるほどニッポン研究所">
+<meta property="og:description" content="日本語を学ぶ留学生のための、クイズと読みもののサイト。">
+<meta property="og:image" content="https://chiaki2027.github.io/naruhodo-lab/img/thumb/kimochi-onomatopoeia.webp">
+<link rel="icon" href="img/favicon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&family=Zen+Maru+Gothic:wght@700;900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&family=Dela+Gothic+One&family=Zen+Maru+Gothic:wght@700;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="assets/style.css">
 <script src="articles/list.js"></script>
 <script src="assets/common.js"></script>
@@ -17,10 +21,17 @@
 
 <main class="wrap">
   <section class="hero">
-    <h1>日本の<em>「なるほど！」</em>を、<br>日本語で{読|よ}もう。</h1>
-    <p>クイズ、{深掘|ふかぼ}り{記事|きじ}、インタビュー。{読|よ}むだけで日本語の{力|ちから}もつく、{留学生|りゅうがくせい}のための{研究所|けんきゅうじょ}です。</p>
-    <button class="btn btn-gacha" type="button" id="gacha">🎲 {記事|きじ}ガチャを{回|まわ}す</button>
+    <div class="hero-text">
+      <p class="hero-kicker">{留学生|りゅうがくせい}のためのクイズ＆{読|よ}みもの</p>
+      <h1>日本の<em>「なるほど！」</em>を<br>日本語で{読|よ}もう。</h1>
+      <p>クイズに{答|こた}えて、{記事|きじ}を読んで、今日から使える日本語を1つ持って{帰|かえ}ろう。ナル・ホド・ポンといっしょに{研究|けんきゅう}スタート！</p>
+      <button class="btn btn-gacha" type="button" id="gacha">🎲 {記事|きじ}ガチャを{回|まわ}す</button>
+    </div>
+    <img class="hero-img" src="img/hero.webp" alt="ナル、ホド、ポン" width="760" height="757">
   </section>
+
+  <h2 class="section-title">{今日|きょう}のイチオシ</h2>
+  <div id="pickup"></div>
 
   <h2 class="section-title">{新|あたら}しい{記事|きじ}</h2>
   <div class="filters">
@@ -30,25 +41,47 @@
   <div class="grid" id="grid"></div>
   <p class="empty" id="empty" hidden>この{条件|じょうけん}の{記事|きじ}はまだありません。</p>
 
+  <h2 class="section-title">{研究所|けんきゅうじょ}のメンバー</h2>
+  <div class="members" id="members"></div>
+
   <h2 class="section-title">{連載|れんさい}</h2>
   <div class="series-list" id="series"></div>
 
-  <h2 class="section-title">レベルについて</h2>
-  <div class="levels" id="levels"></div>
+  <h2 class="section-title">このサイトの{使|つか}い{方|かた}</h2>
+  <div class="howto">
+    <div class="howto-box"><b>① レベルをえらぶ</b><div id="levels"></div></div>
+    <div class="howto-box"><b>② ふりがなを{切|き}りかえる</b><p>{右上|みぎうえ}の「ふりがな」ボタンで、ON／OFFできます。{慣|な}れてきたらOFFにして読んでみよう。</p></div>
+    <div class="howto-box"><b>③ ことばメモを{自分|じぶん}のことばで</b><p>{記事|きじ}の中の「ことばメモ」は、English・中文・Tiếng Việt の{訳|やく}を{表示|ひょうじ}できます。</p></div>
+    <div class="howto-box"><b>④ {最後|さいご}に「{使|つか}ってみよう」</b><p>{読|よ}んで終わりにしない。{記事|きじ}の{最後|さいご}にあるポンのミッションで、{覚|おぼ}えたことばを今日使ってみよう。</p></div>
+  </div>
 </main>
 
 <footer id="site-footer"></footer>
 
 <script>
 (function () {
-  const { SITE, ruby, rubyHtml, visibleArticles, cardHtml, articleUrl, gacha, esc } = NR;
+  const { SITE, ruby, rubyHtml, visibleArticles, cardHtml, thumbHtml, metaHtml, articleUrl, gacha, esc, levelHtml, charIcon } = NR;
   const state = { cat: "all", lv: 0 };
 
-  // ヒーロー部分のふりがな
-  document.querySelectorAll(".hero h1, .hero p, .hero button, .section-title, .empty").forEach(el => {
+  // 固定の文章にふりがなを付ける
+  document.querySelectorAll(".hero-text, .section-title, .empty, .howto-box > b, .howto-box > p").forEach(el => {
     el.innerHTML = rubyHtml(el.innerHTML);
   });
   document.getElementById("gacha").addEventListener("click", () => gacha());
+
+  const all = visibleArticles();
+
+  // 今日のイチオシ（pickup: true の記事。なければ一番新しい記事）
+  const pick = all.find(a => a.pickup) || all[0];
+  if (pick) {
+    document.getElementById("pickup").innerHTML =
+      '<a class="pickup" href="' + articleUrl(pick) + '">' + thumbHtml(pick, { eager: true }) +
+      '<div class="pickup-body"><h3>' + ruby(pick.title) + "</h3>" +
+      '<p>' + ruby(pick.lead || "") + "</p>" + metaHtml(pick) +
+      '<span class="btn btn-line">{読|よ}んでみる →</span></div></a>';
+    const p = document.querySelector(".pickup .btn");
+    p.innerHTML = rubyHtml(p.innerHTML);
+  }
 
   // フィルターのボタン
   const catRow = document.getElementById("cat-row");
@@ -66,37 +99,42 @@
   chip(catRow, "すべて", "cat", "all");
   Object.entries(SITE.categories).forEach(([k, c]) => chip(catRow, ruby(c.name), "cat", k));
   chip(lvRow, "すべて", "lv", 0);
-  [1, 2, 3].forEach(n => chip(lvRow, "★".repeat(n), "lv", n));
+  [1, 2, 3].forEach(n => chip(lvRow, "★".repeat(n) + " " + esc(SITE.levels[n].name), "lv", n));
 
   function draw() {
     document.querySelectorAll(".chip").forEach(b => {
       const v = b.dataset.key === "lv" ? Number(b.dataset.value) : b.dataset.value;
       b.setAttribute("aria-pressed", String(state[b.dataset.key] === v));
     });
-    const list = visibleArticles().filter(a =>
-      (state.cat === "all" || a.category === state.cat) && (!state.lv || a.level === state.lv));
+    const noFilter = state.cat === "all" && !state.lv;
+    const list = all.filter(a =>
+      (state.cat === "all" || a.category === state.cat) && (!state.lv || a.level === state.lv) &&
+      !(noFilter && a === pick));   // 絞り込みなしのときは、上のイチオシと重ならないようにする
     document.getElementById("grid").innerHTML = list.map(cardHtml).join("");
     document.getElementById("empty").hidden = list.length > 0;
   }
   draw();
 
+  // 研究所のメンバー
+  document.getElementById("members").innerHTML = Object.entries(SITE.characters || {}).map(([name, c]) =>
+    '<div class="member">' + charIcon(name, "member-icon") +
+    '<div><div class="member-name">' + esc(name) + '<small>' + ruby(c.role) + "</small></div>" +
+    "<p>" + ruby(c.desc) + "</p></div></div>").join("");
+
   // 連載
   const series = {};
-  visibleArticles().forEach(a => { if (a.series) (series[a.series] = series[a.series] || []).push(a); });
-  const sBox = document.getElementById("series");
+  all.forEach(a => { if (a.series) (series[a.series] = series[a.series] || []).push(a); });
   const names = Object.keys(series);
-  sBox.innerHTML = names.length ? names.map(name => {
+  document.getElementById("series").innerHTML = names.length ? names.map(name => {
     const items = series[name].sort((a, b) => a.seriesNo - b.seriesNo);
     return '<div class="series-box"><h3>' + ruby(name) + "</h3><ol>" +
       items.map(a => '<li value="' + esc(a.seriesNo) + '"><a href="' + articleUrl(a) + '">' + ruby(a.title) + "</a></li>").join("") +
       "</ol></div>";
-  }).join("") : '<p class="empty">{連載|れんさい}はまだありません。</p>';
-  sBox.innerHTML = rubyHtml(sBox.innerHTML);
+  }).join("") : '<p class="empty">連載はまだありません。</p>';
 
   // レベルの説明
   document.getElementById("levels").innerHTML = [1, 2, 3].map(n =>
-    '<div class="level-box"><b>' + NR.stars(n) + " " + esc(SITE.levels[n].name) + "</b><br>" + ruby(SITE.levels[n].desc) + "</div>"
-  ).join("");
+    '<p class="level-line">' + levelHtml(n) + " " + ruby(SITE.levels[n].desc) + "</p>").join("");
 })();
 </script>
 </body>

@@ -1,8 +1,8 @@
 /* なるほどニッポン研究所 — 記事ページ
-   articles/<id>.md を読み込み、Markdown と特別なブロック（quiz / talk / words / point）を表示します。 */
+   articles/<id>.md を読み込み、Markdown と特別なブロック（quiz / talk / words / point / try）を表示します。 */
 (function () {
   "use strict";
-  const { SITE, esc, ruby, rubyHtml, plain, visibleArticles, articleUrl, thumbHtml, metaHtml, cardHtml, gacha } = NR;
+  const { SITE, esc, ruby, rubyHtml, plain, visibleArticles, articleUrl, thumbHtml, metaHtml, cardHtml, gacha, charOf, charIcon, getPref, setPref } = NR;
 
   const id = new URLSearchParams(location.search).get("id");
   const all = visibleArticles();
@@ -21,13 +21,12 @@
   }
 
   // ---------- 見出し部分 ----------
-  const fmt = SITE.formats[art.format] || { name: art.format };
   const cat = SITE.categories[art.category] || { name: art.category };
   document.title = plain(art.title) + " | なるほどニッポン研究所";
   $("#crumb-cat").innerHTML = ruby(cat.name);
   $("#head").innerHTML =
-    thumbHtml(art, { noBadge: true }) +
-    '<h1><span class="fmt-label">【' + esc(fmt.name) + "】</span><br>" + ruby(art.title) + "</h1>" +
+    thumbHtml(art, { noBadge: true, eager: true }) +
+    "<h1>" + ruby(art.title) + "</h1>" +
     metaHtml(art) +
     (art.minutes ? '<div class="meta">読む時間：約' + esc(art.minutes) + "分</div>" : "") +
     (art.draft ? '<div class="draft-note">これは下書き（非公開）の記事です。URLに ?draft を付けたときだけ表示されます。</div>' : "") +
@@ -45,21 +44,18 @@
   function render(md) {
     md = md.replace(/\r\n?/g, "\n");
     const blocks = [];
-    md = md.replace(/^```(quiz|talk|words|point)[ \t]*\n([\s\S]*?)\n```[ \t]*$/gm, (_, type, src) => {
+    md = md.replace(/^```(quiz|talk|words|point|try)[ \t]*\n([\s\S]*?)\n```[ \t]*$/gm, (_, type, src) => {
       blocks.push({ type, src });
       return '\n<div class="nr-slot" data-i="' + (blocks.length - 1) + '"></div>\n';
     });
     $("#body").innerHTML = block(md);
     let qNo = 0;
+    const builders = { talk: buildTalk, words: buildWords, point: buildPoint, try: buildTry };
     document.querySelectorAll(".nr-slot").forEach(slot => {
       const b = blocks[Number(slot.dataset.i)];
-      let el;
-      if (b.type === "quiz") el = buildQuiz(parseQuiz(b.src), ++qNo);
-      else if (b.type === "talk") el = buildTalk(b.src);
-      else if (b.type === "words") el = buildWords(b.src);
-      else el = buildPoint(b.src);
-      slot.replaceWith(el);
+      slot.replaceWith(b.type === "quiz" ? buildQuiz(parseQuiz(b.src), ++qNo) : builders[b.type](b.src));
     });
+    applyLang();
     updateScore();
     renderNext();
   }
@@ -116,7 +112,7 @@
   function buildQuiz(q, no) {
     const box = el("section", "quiz");
     box.appendChild(el("div", "quiz-head",
-      '<span class="quiz-no">Q' + no + '</span><span class="quiz-type">' + TYPE_LABEL[q.type] + "</span>"));
+      charIcon("ポン") + '<span class="quiz-no">Q' + no + '</span><span class="quiz-type">' + TYPE_LABEL[q.type] + "</span>"));
     box.appendChild(el("div", "quiz-q", inline(q.question)));
     if (q.type === "hint") buildHint(box, q);
     else if (q.type === "dobon") buildDobon(box, q);
@@ -124,6 +120,8 @@
     else buildChoice(box, q);
     return box;
   }
+
+  const isShort = q => q.choices.every(c => [...plain(c.text)].length <= 14);
 
   function choiceButtons(q, onPick, two) {
     const wrap = el("div", "choices" + (two ? " two" : ""));
@@ -137,7 +135,7 @@
     return wrap;
   }
 
-  function finishChoices(wrap, q, picked, pickedBtn) {
+  function finishChoices(wrap, q, pickedBtn) {
     wrap.querySelectorAll(".choice").forEach((b, i) => {
       b.disabled = true;
       if (q.choices[i].ok) b.classList.add("correct");
@@ -148,14 +146,13 @@
 
   function buildChoice(box, q) {
     const s = track();
-    const short = q.choices.every(c => plain(c.text).length <= 14);
     const wrap = choiceButtons(q, (c, btn) => {
       if (s.done) return;
       s.done = true; s.ok = c.ok;
-      finishChoices(wrap, q, c, btn);
+      finishChoices(wrap, q, btn);
       box.appendChild(resultBox(c.ok ? "good" : "bad", c.ok ? "せいかい！" : "ざんねん…", q));
       updateScore();
-    }, short);
+    }, isShort(q));
     box.appendChild(wrap);
   }
 
@@ -166,15 +163,6 @@
     const s = hasChoices ? track() : null;
     let finished = false;
 
-    function drawHints(all) {
-      if (all) shown = q.hints.length;
-      list.innerHTML = q.hints.map((h, i) => i < shown
-        ? '<li class="hint"><span class="tag">ヒント' + (i + 1) + "</span><span>" + inline(h) + "</span></li>"
-        : '<li class="hint locked"><span class="tag">ヒント' + (i + 1) + "</span><span>？？？</span></li>").join("");
-      nextBtn.hidden = finished || shown >= q.hints.length;
-      if (!hasChoices) ansBtn.hidden = finished;
-    }
-
     const actions = el("div", "quiz-actions");
     const nextBtn = el("button", "btn btn-line", "次のヒントを見る");
     nextBtn.type = "button";
@@ -182,12 +170,14 @@
     actions.appendChild(nextBtn);
     const ansBtn = el("button", "btn btn-gacha", "答えを見る");
     ansBtn.type = "button";
-    if (!hasChoices) {
-      ansBtn.addEventListener("click", () => {
-        finished = true; drawHints(true);
-        box.appendChild(resultBox("info", "", q));
-      });
-      actions.appendChild(ansBtn);
+
+    function drawHints(showAll) {
+      if (showAll) shown = q.hints.length;
+      list.innerHTML = q.hints.map((h, i) => i < shown
+        ? '<li class="hint"><span class="tag">ヒント' + (i + 1) + "</span><span>" + inline(h) + "</span></li>"
+        : '<li class="hint locked"><span class="tag">ヒント' + (i + 1) + "</span><span>？？？</span></li>").join("");
+      nextBtn.hidden = finished || shown >= q.hints.length;
+      if (!hasChoices) ansBtn.hidden = finished;
     }
 
     box.appendChild(list);
@@ -196,17 +186,22 @@
         if (finished) return;
         finished = true; s.done = true; s.ok = c.ok;
         const used = shown;
-        finishChoices(wrap, q, c, btn);
+        finishChoices(wrap, q, btn);
         drawHints(true);
         const msg = c.ok
           ? (used === 1 ? "ヒント1つで正解！ すごい！" : "ヒント" + used + "つで正解！")
           : "ざんねん…";
         box.appendChild(resultBox(c.ok ? "good" : "bad", msg, q));
         updateScore();
-      }, q.choices.every(c => plain(c.text).length <= 14));
+      }, isShort(q));
       box.appendChild(actions);
       box.appendChild(wrap);
     } else {
+      ansBtn.addEventListener("click", () => {
+        finished = true; drawHints(true);
+        box.appendChild(resultBox("info", "", q));
+      });
+      actions.appendChild(ansBtn);
       box.appendChild(actions);
     }
     drawHints();
@@ -214,7 +209,8 @@
 
   function buildDobon(box, q) {
     const s = track();
-    const grid = el("div", "dobon-grid");
+    const wide = q.choices.some(c => [...plain(c.text)].length > 7);
+    const grid = el("div", "dobon-grid" + (wide ? " wide" : ""));
     const status = el("p", "dobon-status");
     const actions = el("div", "quiz-actions");
     const retry = el("button", "btn btn-line", "もう一度");
@@ -295,7 +291,7 @@
       "</div>";
   }
 
-  // ---------- 会話（インタビュー） ----------
+  // ---------- 会話（研究所のメンバーはアイコン、ほかの人は頭文字） ----------
   const SPEAKER_COLORS = ["#1d2742", "#ff5a3c", "#12a37b", "#2f6fed", "#f08a24"];
   function buildTalk(src) {
     const wrap = el("div", "talk");
@@ -310,28 +306,50 @@
       const i = order.indexOf(name);
       const say = el("div", "say" + (i === 0 ? "" : " right"));
       const initial = [...plain(name).replace(/[（(].*$/, "")][0] || "？";
-      say.innerHTML = '<div class="avatar" style="background:' + SPEAKER_COLORS[i % SPEAKER_COLORS.length] + '">' + esc(initial) + "</div>" +
+      const avatar = charIcon(name) ||
+        '<div class="avatar" style="background:' + SPEAKER_COLORS[i % SPEAKER_COLORS.length] + '">' + esc(initial) + "</div>";
+      say.innerHTML = avatar +
         '<div class="bubble-wrap"><div class="name">' + ruby(name) + '</div><div class="bubble">' + inline(m[2]) + "</div></div>";
       wrap.appendChild(say);
     });
     return wrap;
   }
 
-  // ---------- ことばメモ ----------
+  // ---------- ことばメモ（語 | よみ | 意味 | English | 中文 | Tiếng Việt） ----------
+  const LANGS = SITE.langs || [];
   function buildWords(src) {
     const box = el("div", "words");
     const rows = src.split("\n").map(l => l.trim()).filter(Boolean).map(l => l.split(/\s*[|｜]\s*/));
-    box.innerHTML = '<div class="words-title">📘 ことばメモ</div><dl>' + rows.map(r => {
-      const word = r[0], yomi = r.length >= 3 ? r[1] : "", mean = r.length >= 3 ? r.slice(2).join(" / ") : (r[1] || "");
-      return '<div class="row"><dt>' + inline(word) + (yomi ? "<small>" + esc(yomi) + "</small>" : "") + "</dt><dd>" + inline(mean) + "</dd></div>";
-    }).join("") + "</dl>";
+    const hasTr = rows.some(r => r.length > 3);
+    box.innerHTML = '<div class="words-title"><span>📘 ことばメモ</span>' +
+      (hasTr ? '<select class="words-lang" aria-label="ことばメモの翻訳"><option value="">日本語だけ</option>' +
+        LANGS.map(l => '<option value="' + esc(l.key) + '">' + esc(l.name) + "</option>").join("") + "</select>" : "") +
+      "</div><dl>" + rows.map(r => {
+        const word = r[0], yomi = r.length >= 3 ? r[1] : "", mean = r.length >= 3 ? r[2] : (r[1] || "");
+        const tr = LANGS.map((l, i) => r[3 + i] ? '<span class="tr" data-lang="' + esc(l.key) + '" lang="' + esc(l.key === "zh" ? "zh-Hans" : l.key) + '" hidden>' + esc(r[3 + i]) + "</span>" : "").join("");
+        return '<div class="row"><dt>' + inline(word) + (yomi && yomi !== plain(word) ? "<small>" + esc(yomi) + "</small>" : "") + "</dt><dd>" + inline(mean) + tr + "</dd></div>";
+      }).join("") + "</dl>";
+    const sel = box.querySelector(".words-lang");
+    if (sel) sel.addEventListener("change", () => { setPref("nr-lang", sel.value); applyLang(); });
+    return box;
+  }
+  function applyLang() {
+    const lang = getPref("nr-lang", "");
+    document.querySelectorAll(".words-lang").forEach(s => { s.value = lang; });
+    document.querySelectorAll(".words .tr").forEach(t => { t.hidden = t.dataset.lang !== lang; });
+  }
+
+  // ---------- なるほどポイント（ホドのまとめ） ----------
+  function buildPoint(src) {
+    const box = el("div", "point");
+    box.innerHTML = '<span class="point-title">' + charIcon("ホド") + "なるほどポイント</span>" + block(src);
     return box;
   }
 
-  // ---------- なるほどポイント ----------
-  function buildPoint(src) {
-    const box = el("div", "point");
-    box.innerHTML = '<span class="point-title">💡 なるほどポイント</span>' + block(src);
+  // ---------- 使ってみよう（ポンのミッション） ----------
+  function buildTry(src) {
+    const box = el("div", "try");
+    box.innerHTML = charIcon("ポン") + '<div><div class="try-title">使ってみよう！ ポンのミッション</div>' + block(src) + "</div>";
     return box;
   }
 
