@@ -621,3 +621,6 @@ body.has-lang .gl:hover, body.has-lang .gl:focus-visible { background: #fff3c4; 
 .words dt { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; }
 .words dt .w-ja { font-family: var(--font-head); font-size: 18px; }
 .words dt .tr { font-size: 15.5px; font-weight: 700; }
+
+/* クイズの解説の訳 */
+.result .tr-block { margin-top: 8px; padding-top: 8px; border-top: 2px dashed rgba(29, 39, 66, .2); font-size: 15px; line-height: 1.75; }

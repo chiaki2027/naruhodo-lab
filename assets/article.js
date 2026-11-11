@@ -106,8 +106,13 @@
     let h = verdict ? '<span class="verdict">' + verdict + "</span>" : "";
     if (extra) h += "<div>" + extra + "</div>";
     if (q.answer) h += '<div class="answer">答え：' + inline(q.answer) + "</div>";
-    if (q.explain.length) h += '<div class="explain">' + q.explain.map(inline).join("<br>") + "</div>";
+    if (q.explain.length) {
+      h += '<div class="explain">' + q.explain.map(inline).join("<br>") + "</div>" +
+        // 解説の訳（選んだ言語があれば、下に出す）
+        '<div class="tr tr-block" data-quiz="' + esc(art.id + "/" + window.NRYomi.textKey(q.explain.join(" "))) + '" hidden></div>';
+    }
     r.innerHTML = h;
+    fillTr(r);
     return r;
   }
 
@@ -344,15 +349,26 @@
     return box;
   }
 
-  // 言語が選ばれたら、ことばメモ・例文・ポイントに訳を入れる
-  function applyLang(lang, data) {
-    const fill = (attr, table) => document.querySelectorAll(".tr[data-" + attr + "]").forEach(t => {
-      const text = data && data[table] ? data[table][t.dataset[attr]] : "";
+  // 訳を入れる場所（.tr）に、いま選ばれている言語の訳を入れる。
+  // クイズの解説は答えたあとで画面に足されるので、足したときにもこれを呼ぶ
+  const TR_TABLES = { w: "words", ex: "ex", point: "point", quiz: "quiz" };
+  let cur = { lang: "", data: null };
+  function fillTr(root) {
+    root.querySelectorAll(".tr").forEach(t => {
+      const attr = Object.keys(TR_TABLES).find(a => t.dataset[a] != null);
+      if (!attr) return;
+      const table = cur.data ? cur.data[TR_TABLES[attr]] : null;
+      const text = table ? table[t.dataset[attr]] : "";
       t.textContent = text || "";
-      t.lang = lang || "";
+      t.lang = cur.lang || "";
       t.hidden = !text;
     });
-    fill("w", "words"); fill("ex", "ex"); fill("point", "point");
+  }
+
+  // 言語が選ばれたら、ことばメモ・例文・ポイント・クイズの解説に訳を入れる
+  function applyLang(lang, data) {
+    cur = { lang, data };
+    fillTr(document);
     const hint = $(".lang-hint");
     if (hint) {
       hint.hidden = !lang;

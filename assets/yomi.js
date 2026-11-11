@@ -66,5 +66,19 @@
     return out;
   }
 
-  return { makeScanner, align, uncovered, hasKanji, KANJI };
+  // 記法（太字・ふりがなの指定・改行タグ）を取りのぞいた文
+  function plainText(s) {
+    return String(s).replace(/\*\*/g, "").replace(/\{\{([^{}]*)\}\}/g, "$1").replace(/\{([^{}|]+)\|[^{}|]+\}/g, "$1")
+      .replace(/<br\s*\/?>/g, " ").replace(/\s+/g, " ").trim();
+  }
+  // 文の内容から短い合言葉を作る。クイズの解説と、その訳を結びつけるのに使う
+  // （解説の文を直すと合言葉も変わるので、古い訳がまちがって出ることがない）
+  function textKey(s) {
+    const t = plainText(s);
+    let h = 5381;
+    for (let i = 0; i < t.length; i++) h = ((h * 33) ^ t.charCodeAt(i)) >>> 0;
+    return h.toString(36);
+  }
+
+  return { makeScanner, align, uncovered, hasKanji, KANJI, plainText, textKey };
 });
