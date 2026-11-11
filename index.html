@@ -14,6 +14,8 @@
 <link href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&family=Dela+Gothic+One&family=Zen+Maru+Gothic:wght@700;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="assets/style.css">
 <script src="articles/list.js"></script>
+<script src="assets/dict.js"></script>
+<script src="assets/yomi.js"></script>
 <script src="assets/common.js"></script>
 </head>
 <body>
@@ -22,37 +24,37 @@
 <main class="wrap">
   <section class="hero">
     <div class="hero-text">
-      <p class="hero-kicker">{留学生|りゅうがくせい}のためのクイズ＆{読|よ}みもの</p>
-      <h1>日本の<em>「なるほど！」</em>を<br>日本語で{読|よ}もう。</h1>
-      <p>クイズに{答|こた}えて、{記事|きじ}を読んで、今日から使える日本語を1つ持って{帰|かえ}ろう。ナル・ホド・ポンといっしょに{研究|けんきゅう}スタート！</p>
-      <button class="btn btn-gacha" type="button" id="gacha">🎲 {記事|きじ}ガチャを{回|まわ}す</button>
+      <p class="hero-kicker">留学生のためのクイズ＆読みもの</p>
+      <h1>日本の<em>「なるほど！」</em>を<br>日本語で読もう。</h1>
+      <p>クイズに答えて、記事を読んで、今日から使える日本語を1つ持って帰ろう。ナル・ホド・ポンといっしょに研究スタート！</p>
+      <button class="btn btn-gacha" type="button" id="gacha">🎲 記事ガチャを回す</button>
     </div>
     <img class="hero-img" src="img/hero.webp" alt="ナル、ホド、ポン" width="760" height="757">
   </section>
 
-  <h2 class="section-title">{今日|きょう}のイチオシ</h2>
+  <h2 class="section-title">今日のイチオシ</h2>
   <div id="pickup"></div>
 
-  <h2 class="section-title">{新|あたら}しい{記事|きじ}</h2>
+  <h2 class="section-title">新しい記事</h2>
   <div class="filters">
     <div class="chip-row" id="cat-row"><span class="label">カテゴリ</span></div>
     <div class="chip-row" id="lv-row"><span class="label">レベル</span></div>
   </div>
   <div class="grid" id="grid"></div>
-  <p class="empty" id="empty" hidden>この{条件|じょうけん}の{記事|きじ}はまだありません。</p>
+  <p class="empty" id="empty" hidden>この条件の記事はまだありません。</p>
 
-  <h2 class="section-title">{研究所|けんきゅうじょ}のメンバー</h2>
+  <h2 class="section-title">研究所のメンバー</h2>
   <div class="members" id="members"></div>
 
-  <h2 class="section-title">{連載|れんさい}</h2>
+  <h2 class="section-title">連載</h2>
   <div class="series-list" id="series"></div>
 
-  <h2 class="section-title">このサイトの{使|つか}い{方|かた}</h2>
+  <h2 class="section-title">このサイトの使い方</h2>
   <div class="howto">
     <div class="howto-box"><b>① レベルをえらぶ</b><div id="levels"></div></div>
-    <div class="howto-box"><b>② ふりがなを{切|き}りかえる</b><p>{右上|みぎうえ}の「ふりがな」ボタンで、ON／OFFできます。{慣|な}れてきたらOFFにして読んでみよう。</p></div>
-    <div class="howto-box"><b>③ ことばメモを{自分|じぶん}のことばで</b><p>{記事|きじ}の中の「ことばメモ」は、English・中文・Tiếng Việt の{訳|やく}を{表示|ひょうじ}できます。</p></div>
-    <div class="howto-box"><b>④ {最後|さいご}に「{使|つか}ってみよう」</b><p>{読|よ}んで終わりにしない。{記事|きじ}の{最後|さいご}にあるポンのミッションで、{覚|おぼ}えたことばを今日使ってみよう。</p></div>
+    <div class="howto-box"><b>② ふりがなを切りかえる</b><p>右上の「ふりがな」ボタンで、ON／OFFできます。ONにすると、全部の漢字にふりがなが出ます。慣れてきたらOFFにして読んでみよう。</p></div>
+    <div class="howto-box"><b>③ 自分のことばで確かめる</b><p>右上で言語をえらぶと、ことばの訳が見られます。記事の中の、点線が付いたことばをタップしてみよう。</p><p class="howto-langs no-yomi">English ・ 繁體中文 ・ 简体中文 ・ Español ・ မြန်မာ ・ नेपाली ・ Tiếng Việt ・ Монгол</p></div>
+    <div class="howto-box"><b>④ 最後に「使ってみよう」</b><p>読んで終わりにしない。記事の最後にあるポンのミッションで、覚えたことばを今日使ってみよう。</p></div>
   </div>
 </main>
 
@@ -75,10 +77,10 @@
   const pick = all.find(a => a.pickup) || all[0];
   if (pick) {
     document.getElementById("pickup").innerHTML =
-      '<a class="pickup" href="' + articleUrl(pick) + '">' + thumbHtml(pick, { eager: true }) +
+      '<a class="pickup" href="' + articleUrl(pick) + '">' + thumbHtml(pick, { eager: true, large: true }) +
       '<div class="pickup-body"><h3>' + ruby(pick.title) + "</h3>" +
       '<p>' + ruby(pick.lead || "") + "</p>" + metaHtml(pick) +
-      '<span class="btn btn-line">{読|よ}んでみる →</span></div></a>';
+      '<span class="btn btn-line">読んでみる →</span></div></a>';
     const p = document.querySelector(".pickup .btn");
     p.innerHTML = rubyHtml(p.innerHTML);
   }

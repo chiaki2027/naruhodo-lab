@@ -2,7 +2,7 @@
    articles/<id>.md を読み込み、Markdown と特別なブロック（quiz / talk / words / point / try）を表示します。 */
 (function () {
   "use strict";
-  const { SITE, esc, ruby, rubyHtml, plain, visibleArticles, articleUrl, thumbHtml, metaHtml, cardHtml, gacha, charOf, charIcon, getPref, setPref } = NR;
+  const { SITE, esc, ruby, rubyHtml, plain, visibleArticles, articleUrl, thumbHtml, metaHtml, cardHtml, gacha, charOf, charIcon } = NR;
 
   const id = new URLSearchParams(location.search).get("id");
   const all = visibleArticles();
@@ -25,12 +25,14 @@
   document.title = plain(art.title) + " | なるほどニッポン研究所";
   $("#crumb-cat").innerHTML = ruby(cat.name);
   $("#head").innerHTML =
-    thumbHtml(art, { noBadge: true, eager: true }) +
+    thumbHtml(art, { noBadge: true, eager: true, large: true }) +
     "<h1>" + ruby(art.title) + "</h1>" +
     metaHtml(art) +
-    (art.minutes ? '<div class="meta">読む時間：約' + esc(art.minutes) + "分</div>" : "") +
-    (art.draft ? '<div class="draft-note">これは下書き（非公開）の記事です。URLに ?draft を付けたときだけ表示されます。</div>' : "") +
-    (art.lead ? '<div class="lead">' + inline(art.lead) + "</div>" : "");
+    (art.minutes ? '<div class="meta"><span>読む時間：約' + esc(art.minutes) + "分</span></div>" : "") +
+    (art.draft ? '<div class="draft-note">これは下書き（非公開）の記事です。</div>' : "") +
+    (art.lead ? '<div class="lead gloss-on">' + inline(art.lead) + "</div>" : "") +
+    '<p class="lang-hint" hidden></p>';
+  $("#body").classList.add("gloss-on");   // 本文の中の登録語は、タップで訳が出る
 
   // ---------- 本文 ----------
   fetch("articles/" + encodeURIComponent(art.id) + ".md", { cache: "no-cache" })
@@ -55,7 +57,7 @@
       const b = blocks[Number(slot.dataset.i)];
       slot.replaceWith(b.type === "quiz" ? buildQuiz(parseQuiz(b.src), ++qNo) : builders[b.type](b.src));
     });
-    applyLang();
+    NR.onLang(applyLang);
     updateScore();
     renderNext();
   }
@@ -315,35 +317,47 @@
     return wrap;
   }
 
-  // ---------- ことばメモ（語 | よみ | 意味 | English | 中文 | Tiếng Việt） ----------
-  const LANGS = SITE.langs || [];
+  // ---------- ことばメモ（語 | よみ | 説明 | 例文） ----------
+  // 語と例文の訳は、選んだ言語のデータ（i18n/<言語>.js）から出す
   function buildWords(src) {
     const box = el("div", "words");
-    const rows = src.split("\n").map(l => l.trim()).filter(Boolean).map(l => l.split(/\s*[|｜]\s*/));
-    const hasTr = rows.some(r => r.length > 3);
-    box.innerHTML = '<div class="words-title"><span>📘 ことばメモ</span>' +
-      (hasTr ? '<select class="words-lang" aria-label="ことばメモの翻訳"><option value="">日本語だけ</option>' +
-        LANGS.map(l => '<option value="' + esc(l.key) + '">' + esc(l.name) + "</option>").join("") + "</select>" : "") +
-      "</div><dl>" + rows.map(r => {
-        const word = r[0], yomi = r.length >= 3 ? r[1] : "", mean = r.length >= 3 ? r[2] : (r[1] || "");
-        const tr = LANGS.map((l, i) => r[3 + i] ? '<span class="tr" data-lang="' + esc(l.key) + '" lang="' + esc(l.key === "zh" ? "zh-Hans" : l.key) + '" hidden>' + esc(r[3 + i]) + "</span>" : "").join("");
-        return '<div class="row"><dt>' + inline(word) + (yomi && yomi !== plain(word) ? "<small>" + esc(yomi) + "</small>" : "") + "</dt><dd>" + inline(mean) + tr + "</dd></div>";
-      }).join("") + "</dl>";
-    const sel = box.querySelector(".words-lang");
-    if (sel) sel.addEventListener("change", () => { setPref("nr-lang", sel.value); applyLang(); });
+    const rows = src.split("\n").map(l => l.trim()).filter(Boolean).map(l => l.split(/\s+[|｜]\s+/).map(s => s.trim()));
+    box.innerHTML = '<div class="words-title"><span>📘 ことばメモ</span></div><dl>' + rows.map(r => {
+      const word = r[0], expl = r[2] || "", ex = r[3] || "";
+      return '<div class="row"><dt class="no-gloss"><span class="w-ja">' + inline(word) + "</span>" +
+        '<span class="tr" data-w="' + esc(plain(word)) + '" hidden></span></dt>' +
+        "<dd>" + inline(expl) +
+        (ex ? '<div class="ex"><span class="ex-label">例</span><span class="ex-ja">' + inline(ex) + "</span>" +
+          '<span class="tr" data-ex="' + esc(art.id + "/" + plain(word)) + '" hidden></span></div>' : "") +
+        "</dd></div>";
+    }).join("") + "</dl>";
     return box;
-  }
-  function applyLang() {
-    const lang = getPref("nr-lang", "");
-    document.querySelectorAll(".words-lang").forEach(s => { s.value = lang; });
-    document.querySelectorAll(".words .tr").forEach(t => { t.hidden = t.dataset.lang !== lang; });
   }
 
-  // ---------- なるほどポイント（ホドのまとめ） ----------
+  // ---------- なるほどポイント（ホドのまとめ）。選んだ言語の訳を下に出す ----------
+  let pointNo = 0;
   function buildPoint(src) {
     const box = el("div", "point");
-    box.innerHTML = '<span class="point-title">' + charIcon("ホド") + "なるほどポイント</span>" + block(src);
+    pointNo++;
+    box.innerHTML = '<span class="point-title">' + charIcon("ホド") + "なるほどポイント</span>" + block(src) +
+      '<div class="tr tr-block" data-point="' + esc(art.id + (pointNo > 1 ? "#" + pointNo : "")) + '" hidden></div>';
     return box;
+  }
+
+  // 言語が選ばれたら、ことばメモ・例文・ポイントに訳を入れる
+  function applyLang(lang, data) {
+    const fill = (attr, table) => document.querySelectorAll(".tr[data-" + attr + "]").forEach(t => {
+      const text = data && data[table] ? data[table][t.dataset[attr]] : "";
+      t.textContent = text || "";
+      t.lang = lang || "";
+      t.hidden = !text;
+    });
+    fill("w", "words"); fill("ex", "ex"); fill("point", "point");
+    const hint = $(".lang-hint");
+    if (hint) {
+      hint.hidden = !lang;
+      hint.textContent = !lang ? "" : data ? "点線が付いたことばをタップすると、訳が出ます。" : "この言語の訳は、まだ準備中です。";
+    }
   }
 
   // ---------- 使ってみよう（ポンのミッション） ----------

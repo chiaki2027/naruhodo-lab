@@ -13,14 +13,20 @@
       .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
   }
 
-  // {漢字|かんじ} → <ruby>漢字<rt>かんじ</rt></ruby>（HTMLとして組み立て済みの文字列に使う）
+  // ふりがなは辞書（assets/dict.js）から自動で付く。ここは、手で指定するときの記法だけを処理する
+  //   {漢字|かんじ} → この読みを付ける（辞書より優先）
+  //   {{漢字}}      → ふりがなを付けない（読みがクイズの答えになるときなど）
   function rubyHtml(html) {
-    return String(html).replace(/\{([^{}|\n]+)\|([^{}|\n]+)\}/g, "<ruby>$1<rt>$2</rt></ruby>");
+    return String(html)
+      .replace(/\{\{([^{}\n]+)\}\}/g, '<span class="no-yomi">$1</span>')
+      .replace(/\{([^{}|\n]+)\|([^{}|\n]+)\}/g, "<ruby>$1<rt>$2</rt></ruby>");
   }
-  // ふつうの文字列 → エスケープしてからふりがなを付ける
+  // ふつうの文字列 → エスケープしてから記法を処理する
   function ruby(text) { return rubyHtml(esc(text)); }
-  // ふりがな記法を取りのぞいた文字列（<title>用）
-  function plain(text) { return String(text).replace(/\{([^{}|\n]+)\|([^{}|\n]+)\}/g, "$1"); }
+  // 記法を取りのぞいた文字列（<title>用）
+  function plain(text) {
+    return String(text).replace(/\{\{([^{}\n]+)\}\}/g, "$1").replace(/\{([^{}|\n]+)\|([^{}|\n]+)\}/g, "$1");
+  }
 
   function levelHtml(level) {
     const n = Math.max(1, Math.min(3, level | 0));
@@ -55,8 +61,14 @@
     const lines = Array.isArray(a.catch) ? a.catch : (a.catch ? [a.catch] : []);
     const longest = Math.max(1, ...lines.map(l => [...l].length));
     const size = Math.min(11.5, 60 / longest).toFixed(2);
+    // 画像は3つの大きさ（幅640 / 960 / 1280）を用意してあり、表示する大きさに合うものをブラウザが選ぶ
+    const id = encodeURIComponent(a.id);
+    const src = a.image
+      ? 'src="' + esc(a.image) + '"'
+      : 'src="img/thumb/m/' + id + '.webp" srcset="img/thumb/s/' + id + ".webp 640w, img/thumb/m/" + id + ".webp 960w, img/thumb/" + id + '.webp 1280w" sizes="' +
+        (opts.large ? "(max-width: 760px) 80vw, 720px" : "(max-width: 760px) 50vw, 320px") + '"';
     const img = a.image === false ? "" :
-      '<img src="' + esc(a.image || "img/thumb/" + a.id + ".webp") + '" alt="" loading="' + (opts.eager ? "eager" : "lazy") + '" onerror="this.remove()">';
+      "<img " + src + ' alt="" loading="' + (opts.eager ? "eager" : "lazy") + '" onerror="this.remove()">';
     return '<div class="thumb cat-' + esc(a.category) + '">' + img +
       '<div class="catch">' +
       (a.tag ? '<span class="pill">' + esc(a.tag) + "</span>" : "") +
@@ -131,7 +143,7 @@
       '<p class="gacha-say" aria-live="polite"></p>' +
       '<a class="gacha-result" href="' + url + '">' +
       '<span class="gacha-got">' + charIcon("ポン") + "この記事が出たポン！</span>" +
-      thumbHtml(a, { noBadge: true, eager: true }) +
+      thumbHtml(a, { noBadge: true, eager: true, large: true }) +
       '<span class="gacha-title">' + ruby(a.title) + "</span>" +
       '<span class="gacha-go">読みに行く →<span class="gacha-bar"></span></span></a>';
     document.body.appendChild(ov);
@@ -198,6 +210,143 @@
     '<path d="M20 11 v10" stroke="#ff5a3c" stroke-width="4.5" stroke-linecap="round"/>' +
     '<circle cx="20" cy="28" r="2.8" fill="#ff5a3c"/></svg>';
 
+  // ---- 自動ふりがな：辞書（assets/dict.js）を引いて、全部の漢字に読みを付ける ----
+  const DICT = window.NR_DICT || null;
+  const articleId = /article\.html$/.test(location.pathname) ? params.get("id") : null;
+  const scan = DICT && window.NRYomi ? window.NRYomi.makeScanner(DICT, articleId) : null;
+  // ふりがなを付けない場所（翻訳の文 .tr は日本語ではないので、必ず対象外にする）
+  const SKIP = "ruby, rt, rp, script, style, select, option, textarea, svg, .no-yomi, .gl, .gl-pop, .tr, .catch, .logo";
+  const missing = new Set();   // 辞書になかった漢字（確認用。NR.missing で見られる）
+
+  function tokenNode(tok, glossOk) {
+    const frag = document.createDocumentFragment();
+    window.NRYomi.align(tok.s, tok.r).forEach(p => {
+      if (!p.r) { frag.appendChild(document.createTextNode(p.b)); return; }
+      const rb = document.createElement("ruby");
+      rb.textContent = p.b;
+      const rt = document.createElement("rt");
+      rt.textContent = p.r;
+      rb.appendChild(rt);
+      frag.appendChild(rb);
+    });
+    if (!(tok.g && glossOk)) return frag;
+    const sp = document.createElement("span");   // タップで訳を出す語
+    sp.className = "gl";
+    sp.dataset.g = tok.g;
+    sp.tabIndex = 0;
+    sp.setAttribute("role", "button");
+    sp.appendChild(frag);
+    return sp;
+  }
+  function annotateText(n) {
+    const p = n.parentElement;
+    if (!scan || !p || p.closest(SKIP)) return;
+    const text = n.nodeValue;
+    if (!text || !/\S/.test(text)) return;
+    const toks = scan(text);
+    window.NRYomi.uncovered(toks).forEach(c => missing.add(c));
+    const glossOk = !!p.closest(".gloss-on") && !p.closest("button, a, .no-gloss");
+    // 書きかえるのは「漢字があって読みを付ける語」か「タップ語」だけ。
+    // かなだけの語を同じ文字で置きかえると、置きかえが止まらなくなるので、必ずここで除く
+    const use = t => t.s && ((t.r && window.NRYomi.hasKanji(t.s)) || (t.g && glossOk));
+    if (!toks.some(use)) return;
+    const frag = document.createDocumentFragment();
+    toks.forEach(t => frag.appendChild(use(t) ? tokenNode(t, glossOk) : document.createTextNode(t.s || t.t)));
+    n.replaceWith(frag);
+  }
+  function annotate(root) {
+    if (!scan || !root || (root.closest && root.closest(SKIP))) return;
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    const nodes = [];
+    while (walker.nextNode()) nodes.push(walker.currentNode);
+    nodes.forEach(annotateText);
+  }
+  function startYomi() {
+    if (!scan) return;
+    annotate(document.body);
+    // あとから画面に足された文字（クイズの結果など）にも、自動でふりがなを付ける
+    new MutationObserver(muts => muts.forEach(m => m.addedNodes.forEach(n => {
+      if (n.nodeType === 3) annotateText(n); else if (n.nodeType === 1) annotate(n);
+    }))).observe(document.body, { childList: true, subtree: true });
+  }
+
+  // ---- 翻訳の言語（選んだ言語のデータ i18n/<言語>.js だけを読みこむ） ----
+  const LANGS = SITE.langs || [];
+  const LANG_SHORT = { en: "EN", "zh-Hant": "繁", "zh-Hans": "简", es: "ES", my: "MY", ne: "NE", vi: "VI", mn: "MN" };
+  let lang = "";
+  const langListeners = [];
+  function guessLang() {   // 最初は、端末の言語に合わせる（日本語の端末は「日本語だけ」）
+    const keys = LANGS.map(l => l.key);
+    for (const n of (navigator.languages && navigator.languages.length ? navigator.languages : [navigator.language || ""])) {
+      const l = String(n).toLowerCase();
+      if (l.startsWith("ja")) return "";
+      if (l.startsWith("zh")) return /tw|hk|mo|hant/.test(l) ? "zh-Hant" : "zh-Hans";
+      const k = keys.find(k => l === k.toLowerCase() || l.startsWith(k.toLowerCase() + "-"));
+      if (k) return k;
+    }
+    return "";
+  }
+  function loadLang(key) {
+    return new Promise(res => {
+      if (!key) return res(null);
+      window.NR_I18N = window.NR_I18N || {};
+      if (window.NR_I18N[key]) return res(window.NR_I18N[key]);
+      const s = document.createElement("script");
+      s.src = "i18n/" + key + ".js";
+      s.onload = () => res(window.NR_I18N[key] || null);
+      s.onerror = () => res(null);
+      document.head.appendChild(s);
+    });
+  }
+  function setLang(key, save) {
+    lang = LANGS.some(l => l.key === key) ? key : "";
+    if (save) setPref("nr-lang", lang || "none");
+    closePop();
+    document.body.classList.toggle("has-lang", !!lang);
+    document.querySelectorAll(".lang-pick").forEach(p => {
+      p.classList.toggle("none", !lang);
+      p.querySelector("select").value = lang;
+      p.querySelector("b").textContent = lang ? (LANG_SHORT[lang] || lang) : "Language";
+    });
+    loadLang(lang).then(data => { if (lang === key || !key) langListeners.forEach(fn => fn(lang, data)); });
+  }
+  function onLang(fn) { langListeners.push(fn); loadLang(lang).then(data => fn(lang, data)); }
+
+  // ---- タップ翻訳：点線が付いた語をタップすると、読みと訳の小さい窓が出る ----
+  let pop = null;
+  function closePop() { if (pop) { pop.remove(); pop = null; } }
+  function openPop(el) {
+    closePop();
+    const key = el.dataset.g;
+    const data = (window.NR_I18N || {})[lang];
+    const tr = data && data.words && data.words[key];
+    const yomiText = DICT && DICT.k ? DICT.k[key] || "" : "";
+    pop = document.createElement("div");
+    pop.className = "gl-pop";
+    pop.setAttribute("role", "tooltip");
+    pop.innerHTML = '<div class="gl-word">' + esc(key) + (yomiText && yomiText !== key ? '<span class="gl-yomi">' + esc(yomiText) + "</span>" : "") + "</div>" +
+      '<div class="gl-tr" lang="' + esc(lang) + '">' + (tr ? esc(tr) : "…") + "</div>";
+    document.body.appendChild(pop);
+    const r = el.getClientRects()[0] || el.getBoundingClientRect();
+    const vw = document.documentElement.clientWidth, pw = pop.offsetWidth, ph = pop.offsetHeight;
+    const left = Math.max(8, Math.min(vw - pw - 8, r.left + r.width / 2 - pw / 2));
+    const above = r.top - ph - 12 > 64;   // 上に出す場所がなければ、下に出す
+    pop.style.left = left + window.scrollX + "px";
+    pop.style.top = (above ? r.top - ph - 10 : r.bottom + 10) + window.scrollY + "px";
+    pop.style.setProperty("--arrow", Math.max(14, Math.min(pw - 14, r.left + r.width / 2 - left)) + "px");
+    pop.classList.add(above ? "above" : "below");
+  }
+  document.addEventListener("click", e => {
+    const g = e.target.closest ? e.target.closest(".gl") : null;
+    if (g && lang) { e.preventDefault(); openPop(g); }
+    else if (!(e.target.closest && e.target.closest(".gl-pop"))) closePop();
+  });
+  document.addEventListener("keydown", e => {
+    if (e.key === "Escape") closePop();
+    else if ((e.key === "Enter" || e.key === " ") && lang && e.target.classList && e.target.classList.contains("gl")) { e.preventDefault(); openPop(e.target); }
+  });
+  window.addEventListener("resize", closePop);
+
   function renderHeader() {
     const el = document.getElementById("site-header");
     if (!el) return;
@@ -205,11 +354,16 @@
     el.innerHTML = '<div class="inner">' +
       '<a class="logo" href="index.html' + (SHOW_DRAFT ? "?draft" : "") + '">' + LOGO_SVG +
       '<span class="logo-text"><small>NARUHODO NIPPON LAB</small><span>なるほどニッポン研究所</span></span></a>' +
+      '<div class="hdr-tools">' +
+      '<label class="lang-pick none"><span class="lang-now">🌐<b>Language</b></span>' +
+      '<select aria-label="Language / 翻訳の言語"><option value="">日本語だけ</option>' +
+      LANGS.map(l => '<option value="' + esc(l.key) + '">' + esc(l.name) + "</option>").join("") + "</select></label>" +
       '<button class="furigana-toggle" type="button" aria-pressed="true">ふりがな<span class="sw"></span></button>' +
-      "</div>";
+      "</div></div>";
     el.querySelector(".furigana-toggle").addEventListener("click", function () {
       setFurigana(this.getAttribute("aria-pressed") !== "true");
     });
+    el.querySelector(".lang-pick select").addEventListener("change", function () { setLang(this.value, true); });
   }
 
   function renderFooter() {
@@ -227,10 +381,14 @@
     renderHeader();
     renderFooter();
     setFurigana(getPref("nr-furigana", "on") !== "off");
+    const saved = getPref("nr-lang", null);
+    setLang(saved == null ? guessLang() : (saved === "none" ? "" : saved), false);
+    startYomi();
   });
 
   window.NR = {
     SITE, SHOW_DRAFT, esc, ruby, rubyHtml, plain, levelHtml, visibleArticles, isNew, fmtDate,
-    articleUrl, thumbHtml, metaHtml, cardHtml, gacha, charOf, charIcon, getPref, setPref
+    articleUrl, thumbHtml, metaHtml, cardHtml, gacha, charOf, charIcon, getPref, setPref,
+    onLang, missing, lang: () => lang
   };
 })();
