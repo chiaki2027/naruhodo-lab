@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>なるほどニッポン研究所</title>
+<meta name="description" content="日本で学ぶ留学生のための、クイズと読みもののサイト。日本語・日本のくらし・ざつがくの「なるほど！」を、やさしい日本語で。">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&family=Zen+Maru+Gothic:wght@700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/style.css">
+<script src="articles/list.js"></script>
+<script src="assets/common.js"></script>
+</head>
+<body>
+<header id="site-header"></header>
+
+<main class="wrap">
+  <section class="hero">
+    <h1>日本の<em>「なるほど！」</em>を、<br>日本語で{読|よ}もう。</h1>
+    <p>クイズ、{深掘|ふかぼ}り{記事|きじ}、インタビュー。{読|よ}むだけで日本語の{力|ちから}もつく、{留学生|りゅうがくせい}のための{研究所|けんきゅうじょ}です。</p>
+    <button class="btn btn-gacha" type="button" id="gacha">🎲 {記事|きじ}ガチャを{回|まわ}す</button>
+  </section>
+
+  <h2 class="section-title">{新|あたら}しい{記事|きじ}</h2>
+  <div class="filters">
+    <div class="chip-row" id="cat-row"><span class="label">カテゴリ</span></div>
+    <div class="chip-row" id="lv-row"><span class="label">レベル</span></div>
+  </div>
+  <div class="grid" id="grid"></div>
+  <p class="empty" id="empty" hidden>この{条件|じょうけん}の{記事|きじ}はまだありません。</p>
+
+  <h2 class="section-title">{連載|れんさい}</h2>
+  <div class="series-list" id="series"></div>
+
+  <h2 class="section-title">レベルについて</h2>
+  <div class="levels" id="levels"></div>
+</main>
+
+<footer id="site-footer"></footer>
+
+<script>
+(function () {
+  const { SITE, ruby, rubyHtml, visibleArticles, cardHtml, articleUrl, gacha, esc } = NR;
+  const state = { cat: "all", lv: 0 };
+
+  // ヒーロー部分のふりがな
+  document.querySelectorAll(".hero h1, .hero p, .hero button, .section-title, .empty").forEach(el => {
+    el.innerHTML = rubyHtml(el.innerHTML);
+  });
+  document.getElementById("gacha").addEventListener("click", () => gacha());
+
+  // フィルターのボタン
+  const catRow = document.getElementById("cat-row");
+  const lvRow = document.getElementById("lv-row");
+  function chip(row, label, key, value) {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "chip"; b.innerHTML = label;
+    b.dataset.key = key; b.dataset.value = value;
+    b.addEventListener("click", () => {
+      state[key] = key === "lv" ? Number(value) : value;
+      draw();
+    });
+    row.appendChild(b);
+  }
+  chip(catRow, "すべて", "cat", "all");
+  Object.entries(SITE.categories).forEach(([k, c]) => chip(catRow, ruby(c.name), "cat", k));
+  chip(lvRow, "すべて", "lv", 0);
+  [1, 2, 3].forEach(n => chip(lvRow, "★".repeat(n), "lv", n));
+
+  function draw() {
+    document.querySelectorAll(".chip").forEach(b => {
+      const v = b.dataset.key === "lv" ? Number(b.dataset.value) : b.dataset.value;
+      b.setAttribute("aria-pressed", String(state[b.dataset.key] === v));
+    });
+    const list = visibleArticles().filter(a =>
+      (state.cat === "all" || a.category === state.cat) && (!state.lv || a.level === state.lv));
+    document.getElementById("grid").innerHTML = list.map(cardHtml).join("");
+    document.getElementById("empty").hidden = list.length > 0;
+  }
+  draw();
+
+  // 連載
+  const series = {};
+  visibleArticles().forEach(a => { if (a.series) (series[a.series] = series[a.series] || []).push(a); });
+  const sBox = document.getElementById("series");
+  const names = Object.keys(series);
+  sBox.innerHTML = names.length ? names.map(name => {
+    const items = series[name].sort((a, b) => a.seriesNo - b.seriesNo);
+    return '<div class="series-box"><h3>' + ruby(name) + "</h3><ol>" +
+      items.map(a => '<li value="' + esc(a.seriesNo) + '"><a href="' + articleUrl(a) + '">' + ruby(a.title) + "</a></li>").join("") +
+      "</ol></div>";
+  }).join("") : '<p class="empty">{連載|れんさい}はまだありません。</p>';
+  sBox.innerHTML = rubyHtml(sBox.innerHTML);
+
+  // レベルの説明
+  document.getElementById("levels").innerHTML = [1, 2, 3].map(n =>
+    '<div class="level-box"><b>' + NR.stars(n) + " " + esc(SITE.levels[n].name) + "</b><br>" + ruby(SITE.levels[n].desc) + "</div>"
+  ).join("");
+})();
+</script>
+</body>
+</html>
